@@ -584,15 +584,23 @@ function updateCharts(totalValue) {
 }
 
 // ── 주가 조회 ───────────────────────────────────────
-// 해외주식·ETF: Yahoo Finance 무료 API (Netlify Function 경유)
-// 국내주식: 수동 입력 안내
-
 async function fetchYahooPrice(ticker) {
-  const res = await fetch(`/api/stock?ticker=${encodeURIComponent(ticker)}`);
-  if (!res.ok) throw new Error(`조회 실패 (${res.status})`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return data; // { ticker, name, current, currency }
+  // allorigins.win: 무료 CORS 프록시
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`;
+
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error(`프록시 오류 (${res.status})`);
+  const wrapper = await res.json();
+  const data = JSON.parse(wrapper.contents);
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error('데이터 없음');
+  return {
+    ticker,
+    name: meta.shortName || meta.longName || ticker,
+    current: meta.regularMarketPrice ?? meta.previousClose ?? null,
+    currency: meta.currency ?? 'USD'
+  };
 }
 
 function isDomestic(type) {
