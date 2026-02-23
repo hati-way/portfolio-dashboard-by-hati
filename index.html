@@ -180,24 +180,24 @@ tbody td:nth-child(2){text-align:center}
     <div class="setup-step">
       <div class="step-num">2</div>
       <div class="step-text">
-        <strong>스프레드시트를 웹에 게시</strong>
-        구글 스프레드시트 메뉴 → <code>파일</code> → <code>웹에 게시</code> → 시트 선택 →
-        형식을 <code>쉼표로 구분된 값(.csv)</code> 선택 → <code>게시</code> 버튼 클릭 →
-        생성된 URL 복사
+        <strong>Apps Script 배포</strong>
+        구글 스프레드시트 → <code>확장 프로그램</code> → <code>Apps Script</code> → 코드 입력 →
+        <code>배포</code> → <code>새 배포</code> → 유형: 웹 앱, 액세스: 모든 사용자 →
+        배포 후 생성된 URL 복사
       </div>
     </div>
 
     <div class="setup-step">
       <div class="step-num">3</div>
       <div class="step-text">
-        <strong>아래에 CSV URL 붙여넣기</strong>
-        복사한 URL을 아래 입력창에 붙여넣고 <code>연결하기</code>를 클릭하세요.
-        URL 형식: <code>https://docs.google.com/spreadsheets/d/.../pub?...&output=csv</code>
+        <strong>아래에 Apps Script URL 붙여넣기</strong>
+        배포 후 받은 URL을 아래 입력창에 붙여넣고 <code>연결하기</code>를 클릭하세요.
+        URL 형식: <code>https://script.google.com/macros/s/.../exec</code>
       </div>
     </div>
 
     <div class="url-input-wrap">
-      <input class="url-input" id="sheet-url" placeholder="구글 스프레드시트 CSV URL을 붙여넣으세요…">
+      <input class="url-input" id="sheet-url" placeholder="Apps Script URL을 붙여넣으세요… (https://script.google.com/macros/s/.../exec)">
       <button class="btn btn-primary" onclick="connectSheet()">연결하기</button>
     </div>
     <div id="setup-error" style="margin-top:12px;font-size:12px;color:var(--negative);font-family:var(--font-mono);min-height:18px"></div>
@@ -355,10 +355,7 @@ function connectSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const errEl = document.getElementById('setup-error');
   if (!url) { errEl.textContent = '⚠ URL을 입력해 주세요.'; return; }
-  if (!url.includes('docs.google.com')) { errEl.textContent = '⚠ 구글 스프레드시트 URL을 입력해 주세요.'; return; }
-  if (!url.includes('output=csv') && !url.includes('/pub')) {
-    errEl.textContent = '⚠ "웹에 게시" 후 생성된 CSV URL을 입력해 주세요.'; return;
-  }
+  if (!url.includes('script.google.com')) { errEl.textContent = '⚠ Apps Script 배포 URL을 입력해 주세요.'; return; }
   errEl.textContent = '';
   localStorage.setItem(STORAGE_KEY, url);
   showDashboard();
@@ -377,7 +374,7 @@ function showDashboard() {
   document.getElementById('dashboard-screen').style.display = 'block';
 }
 
-// ── LOAD CSV FROM GOOGLE SHEETS ───────────────────
+// ── LOAD FROM APPS SCRIPT ────────────────────────
 async function loadSheet() {
   const url = localStorage.getItem(STORAGE_KEY);
   if (!url) { showSetup(); return; }
@@ -390,15 +387,13 @@ async function loadSheet() {
   spinner.style.animation = 'spin 1s linear infinite';
 
   try {
-    // 캐시 방지용 타임스탬프 추가
-    const fetchUrl = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
-    const res = await fetch(fetchUrl);
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const csv = await res.text();
-    parseCSV(csv);
+    const json = await res.json();
+    parseJSON(json);
     setAlert('', '');
   } catch(e) {
-    setAlert('error', `❌ 데이터를 불러오지 못했습니다: ${e.message} — 스프레드시트가 "웹에 게시" 되어 있는지 확인해 주세요.`);
+    setAlert('error', `❌ 데이터를 불러오지 못했습니다: ${e.message}`);
     console.error(e);
   } finally {
     banner.style.display = 'none';
@@ -407,68 +402,66 @@ async function loadSheet() {
   }
 }
 
-// ── PARSE CSV ─────────────────────────────────────
-function parseCSV(csv) {
-  const lines = csv.trim().split('\n').map(l => l.split(',').map(c => c.trim().replace(/^"|"$/g,'')));
-  // 헤더 행 찾기 (티커 or ticker 포함한 행)
-  let headerIdx = lines.findIndex(l => l.some(c => c.toLowerCase().includes('ticker') || c.toLowerCase().includes('티커')));
-  if (headerIdx < 0) headerIdx = 0;
-  const headers = lines[headerIdx].map(h => h.toLowerCase());
-
-  // 컬럼 인덱스 매핑
-  const col = (names) => {
-    for (const n of names) {
-      const idx = headers.findIndex(h => h.replace(/\s|\n|\r/g,'').includes(n.replace(/\s/g,'')));
-      if (idx >= 0) return idx;
-    }
-    return -1;
-  };
-  const iTicker   = col(['ticker','티커(ticker)','티커']);
-  const iName     = col(['name','종목명']);
-  const iType     = col(['type','유형(국내/해외/etf)','유형']);
-  const iTeam     = col(['team','팀(청팀/백팀)','팀']);
-  const iCurrency = col(['currency','통화(krw/usd)','통화']);
-  const iBuy      = col(['buy','매수평단가','매수','평단가']);
-  const iQty      = col(['qty','quantity','보유수량(주)','수량','보유']);
-  const iCurrent  = col(['current','현재가(자동)','현재가']);
-  const iDividend = col(['dividend','배당수익률(%)','배당']);
-  const iPer      = col(['per']);
-  const iPbr      = col(['pbr']);
-
-  if (iTicker < 0 || iName < 0) {
-    setAlert('error', '❌ 스프레드시트 형식이 맞지 않습니다. 티커(ticker)와 종목명(name) 컬럼이 필요합니다.');
+// ── PARSE JSON FROM APPS SCRIPT ──────────────────
+function parseJSON(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    setAlert('warn', '⚠ 종목 데이터가 없습니다.');
     return;
   }
 
-  holdings = [];
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const row = lines[i];
-    const ticker = row[iTicker];
-    if (!ticker || ticker === '') continue;
+  function findKey(obj, names) {
+    const keys = Object.keys(obj).map(k => k.toLowerCase().replace(/\s|\n|\r/g,''));
+    for (const n of names) {
+      const clean = n.replace(/\s/g,'');
+      const idx = keys.findIndex(k => k.includes(clean));
+      if (idx >= 0) return Object.keys(obj)[idx];
+    }
+    return null;
+  }
 
-    const current = iCurrent >= 0 ? parseFloat(row[iCurrent]) : 0;
-    const buy     = iBuy >= 0     ? parseFloat(row[iBuy])     : 0;
-    const qty     = iQty >= 0     ? parseFloat(row[iQty])     : 0;
-    if (isNaN(current) || isNaN(buy) || isNaN(qty)) continue;
+  holdings = [];
+  rows.forEach(row => {
+    const kTicker   = findKey(row, ['ticker','티커(ticker)','티커']);
+    const kName     = findKey(row, ['name','종목명']);
+    const kType     = findKey(row, ['type','유형(국내/해외/etf)','유형']);
+    const kTeam     = findKey(row, ['team','팀(청팀/백팀)','팀']);
+    const kCurrency = findKey(row, ['currency','통화(krw/usd)','통화']);
+    const kBuy      = findKey(row, ['buy','매수평단가','매수','평단가']);
+    const kQty      = findKey(row, ['qty','quantity','보유수량(주)','수량','보유']);
+    const kCurrent  = findKey(row, ['current','현재가(자동)','현재가']);
+    const kDividend = findKey(row, ['dividend','배당수익률(%)','배당']);
+    const kPer      = findKey(row, ['per']);
+    const kPbr      = findKey(row, ['pbr']);
+
+    const ticker  = kTicker  ? String(row[kTicker]).trim()  : '';
+    if (!ticker) return;
+    const current = kCurrent  ? parseFloat(row[kCurrent])  : 0;
+    const buy     = kBuy      ? parseFloat(row[kBuy])      : 0;
+    const qty     = kQty      ? parseFloat(row[kQty])      : 0;
+    if (isNaN(current) || isNaN(buy) || isNaN(qty)) return;
 
     holdings.push({
       ticker,
-      name:     iName >= 0     ? row[iName]     : ticker,
-      type:     iType >= 0     ? row[iType]      : '주식',
-      team:     iTeam >= 0     ? row[iTeam]      : '',
-      currency: iCurrency >= 0 ? row[iCurrency]  : 'KRW',
+      name:     kName     ? String(row[kName])     : ticker,
+      type:     kType     ? String(row[kType])      : '주식',
+      team:     kTeam     ? String(row[kTeam])      : '',
+      currency: kCurrency ? String(row[kCurrency])  : 'KRW',
       buy, qty, current,
-      dividend: iDividend >= 0 ? parseFloat(row[iDividend]) || 0 : 0,
-      per:      iPer >= 0      ? row[iPer]        : '',
-      pbr:      iPbr >= 0      ? row[iPbr]        : '',
+      dividend: kDividend ? parseFloat(row[kDividend]) || 0 : 0,
+      per:      kPer      ? String(row[kPer])       : '',
+      pbr:      kPbr      ? String(row[kPbr])       : '',
     });
-  }
+  });
 
   if (holdings.length === 0) {
-    setAlert('warn', '⚠ 종목 데이터가 없습니다. 스프레드시트에 데이터를 입력해 주세요.');
+    setAlert('warn', '⚠ 종목 데이터가 없습니다.');
   }
   render();
 }
+
+function parseCSV_unused() {
+}
+
 
 function setAlert(type, msg) {
   const el = document.getElementById('alert-area');
