@@ -278,8 +278,8 @@ tbody td:nth-child(2){text-align:center}
     <div class="modal-title" id="modal-title">종목 추가</div>
     <div id="ai-fetch-area" style="margin-bottom:18px">
       <div style="display:flex;gap:8px;align-items:center">
-        <input class="form-input" id="f-ticker-search" placeholder="티커 입력 후 AI 조회 (예: 005930, AAPL)" style="flex:1">
-        <button class="btn btn-primary" id="ai-fetch-btn" onclick="fetchWithAI()" style="white-space:nowrap;padding:10px 14px">🤖 AI 조회</button>
+        <input class="form-input" id="f-ticker-search" placeholder="해외주식·ETF 티커 입력 후 시세 조회 (예: AAPL, QQQ)" style="flex:1">
+        <button class="btn btn-primary" id="ai-fetch-btn" onclick="fetchWithAI()" style="white-space:nowrap;padding:10px 14px">🔍 시세 조회</button>
       </div>
       <div id="ai-status" style="margin-top:8px;font-size:12px;font-family:var(--font-mono);color:var(--text-muted);min-height:18px"></div>
     </div>
@@ -583,34 +583,20 @@ function updateCharts(totalValue) {
   }
 }
 
-// ── AI 조회 ───────────────────────────────────────
-async function callAI(ticker, type, currency) {
-  const today = new Date().toISOString().split('T')[0];
-  const prompt = `오늘 ${today} 기준 ${ticker}(${type}, ${currency}) 종목의 최신 데이터를 웹에서 검색하세요.
-반드시 순수 JSON만 반환하고 다른 텍스트는 절대 포함하지 마세요.
-형식: {"name":"종목명","current":현재가숫자,"dividend":배당수익률숫자또는null,"per":PER숫자또는null,"pbr":PBR숫자또는null}`;
+// ── 주가 조회 ───────────────────────────────────────
+// 해외주식·ETF: Yahoo Finance 무료 API (Netlify Function 경유)
+// 국내주식: 수동 입력 안내
 
-    const res = await fetch('/api/claude', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:400,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
-        messages:[{role:'user',content:prompt}]
-      })
-    });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API ${res.status}: ${errText.slice(0,200)}`);
-  }
+async function fetchYahooPrice(ticker) {
+  const res = await fetch(`/api/stock?ticker=${encodeURIComponent(ticker)}`);
+  if (!res.ok) throw new Error(`조회 실패 (${res.status})`);
   const data = await res.json();
-  const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
-  const clean = text.replace(/^```[a-z]*\n?/,'').replace(/\n?```$/,'').trim();
-  // JSON 오브젝트만 추출
-  const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('JSON을 파싱할 수 없습니다: ' + clean.slice(0,100));
-  return JSON.parse(match[0]);
+  if (data.error) throw new Error(data.error);
+  return data; // { ticker, name, current, currency }
+}
+
+function isDomestic(type) {
+  return type === '국내주식';
 }
 
 function setStatus(msg, color='var(--text-muted)') {
@@ -621,41 +607,48 @@ function setStatus(msg, color='var(--text-muted)') {
 async function fetchWithAI() {
   const ticker = document.getElementById('f-ticker-search').value.trim().toUpperCase();
   if (!ticker) { setStatus('⚠ 티커를 입력해 주세요.','var(--accent3)'); return; }
+  const type = document.getElementById('f-type').value;
   const btn = document.getElementById('ai-fetch-btn');
-  btn.disabled=true; btn.textContent='조회 중…';
-  setStatus(`🔍 ${ticker} 검색 중…`,'var(--accent)');
-  try {
-    const r = await callAI(ticker, document.getElementById('f-type').value, document.getElementById('f-currency').value);
+
+  if (isDomestic(type)) {
+    // 국내주식은 자동 조회 불가 → 티커만 채워주고 안내
     document.getElementById('f-ticker').value = ticker;
-    if (r.name)            document.getElementById('f-name').value    = r.name;
-    if (r.current!=null)   document.getElementById('f-current').value = r.current;
-    if (r.dividend!=null)  document.getElementById('f-dividend').value= r.dividend;
-    if (r.per!=null)       document.getElementById('f-per').value     = r.per;
-    if (r.pbr!=null)       document.getElementById('f-pbr').value     = r.pbr;
-    setStatus('✅ 조회 완료! 수량·매수가 입력 후 추가하세요.','var(--positive)');
+    setStatus('📝 국내주식은 현재가를 직접 입력해 주세요 (네이버 금융 참고)', 'var(--accent3)');
+    return;
+  }
+
+  btn.disabled=true; btn.textContent='조회 중…';
+  setStatus(`🔍 ${ticker} 시세 조회 중…`, 'var(--accent)');
+  try {
+    const r = await fetchYahooPrice(ticker);
+    document.getElementById('f-ticker').value   = ticker;
+    if (r.name)    document.getElementById('f-name').value    = r.name;
+    if (r.current) document.getElementById('f-current').value = r.current;
+    setStatus('✅ 현재가 조회 완료! 수량·매수가·PER·PBR은 직접 입력해 주세요.', 'var(--positive)');
   } catch(e) {
-    setStatus('❌ 조회 실패 — '+e.message,'var(--negative)');
+    setStatus('❌ 조회 실패 — ' + e.message, 'var(--negative)');
     document.getElementById('f-ticker').value = ticker;
     console.error(e);
   } finally {
-    btn.disabled=false; btn.textContent='🤖 AI 조회';
+    btn.disabled=false; btn.textContent='🔍 시세 조회';
   }
 }
 
 async function refreshOne(i) {
   const h = holdings[i];
+  if (isDomestic(h.type)) {
+    alert(`'${h.name}'은 국내주식이라 자동 조회가 안 됩니다.\n✎ 수정 버튼으로 현재가를 직접 업데이트해 주세요.`);
+    return;
+  }
   const row = document.querySelector(`#holdings-tbody tr:nth-child(${i+1})`);
   if (row) row.style.opacity='0.5';
   try {
-    const r = await callAI(h.ticker, h.type, h.currency);
-    if (r.current!=null)  h.current  = r.current;
-    if (r.dividend!=null) h.dividend = r.dividend;
-    if (r.per!=null)      h.per      = String(r.per);
-    if (r.pbr!=null)      h.pbr      = String(r.pbr);
+    const r = await fetchYahooPrice(h.ticker);
+    if (r.current) h.current = r.current;
     render();
   } catch(e) {
     if (row) row.style.opacity='';
-    alert('AI 조회 실패: '+e.message);
+    alert('시세 조회 실패: ' + e.message);
     console.error(e);
   }
 }
@@ -669,16 +662,14 @@ async function refreshAllHoldings() {
   banner.style.display='flex'; btn.disabled=true;
   spinner.style.animation='spin 1s linear infinite'; spinner.textContent='⟳'; spinner.style.color='';
 
-  let ok=0, fail=0;
+  let ok=0, skip=0, fail=0;
   for (let i=0; i<holdings.length; i++) {
     const h = holdings[i];
     text.textContent = `${h.name} 조회 중… (${i+1}/${holdings.length})`;
+    if (isDomestic(h.type)) { skip++; continue; } // 국내주식 건너뜀
     try {
-      const r = await callAI(h.ticker, h.type, h.currency);
-      if (r.current!=null)  h.current  = r.current;
-      if (r.dividend!=null) h.dividend = r.dividend;
-      if (r.per!=null)      h.per      = String(r.per);
-      if (r.pbr!=null)      h.pbr      = String(r.pbr);
+      const r = await fetchYahooPrice(h.ticker);
+      if (r.current) h.current = r.current;
       ok++; render();
     } catch(e) { fail++; console.error(h.ticker, e); }
   }
@@ -686,10 +677,15 @@ async function refreshAllHoldings() {
   spinner.style.animation='none';
   spinner.textContent = fail===0 ? '✓' : '⚠';
   spinner.style.color = fail===0 ? 'var(--positive)' : 'var(--accent3)';
-  text.textContent    = fail===0 ? `${ok}개 종목 업데이트 완료` : `${ok}개 성공, ${fail}개 실패`;
-  setTimeout(()=>{ banner.style.display='none'; btn.disabled=false; },3500);
+  const msg = [];
+  if (ok>0)   msg.push(`${ok}개 업데이트`);
+  if (skip>0) msg.push(`${skip}개 수동입력 필요`);
+  if (fail>0) msg.push(`${fail}개 실패`);
+  text.textContent = msg.join(' · ');
+  setTimeout(()=>{ banner.style.display='none'; btn.disabled=false; }, 3500);
   render();
 }
+
 
 // ── MODAL ─────────────────────────────────────────
 function openModal() {
