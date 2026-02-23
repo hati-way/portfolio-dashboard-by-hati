@@ -418,20 +418,20 @@ function parseCSV(csv) {
   // 컬럼 인덱스 매핑
   const col = (names) => {
     for (const n of names) {
-      const idx = headers.findIndex(h => h.includes(n));
+      const idx = headers.findIndex(h => h.replace(/\s|\n|\r/g,'').includes(n.replace(/\s/g,'')));
       if (idx >= 0) return idx;
     }
     return -1;
   };
-  const iTicker   = col(['ticker','티커']);
+  const iTicker   = col(['ticker','티커(ticker)','티커']);
   const iName     = col(['name','종목명']);
-  const iType     = col(['type','유형']);
-  const iTeam     = col(['team','팀']);
-  const iCurrency = col(['currency','통화']);
-  const iBuy      = col(['buy','매수','평단가']);
-  const iQty      = col(['qty','quantity','수량','보유']);
-  const iCurrent  = col(['current','현재가']);
-  const iDividend = col(['dividend','배당']);
+  const iType     = col(['type','유형(국내/해외/etf)','유형']);
+  const iTeam     = col(['team','팀(청팀/백팀)','팀']);
+  const iCurrency = col(['currency','통화(krw/usd)','통화']);
+  const iBuy      = col(['buy','매수평단가','매수','평단가']);
+  const iQty      = col(['qty','quantity','보유수량(주)','수량','보유']);
+  const iCurrent  = col(['current','현재가(자동)','현재가']);
+  const iDividend = col(['dividend','배당수익률(%)','배당']);
   const iPer      = col(['per']);
   const iPbr      = col(['pbr']);
 
