@@ -273,7 +273,7 @@ tbody td:nth-child(2){text-align:center}
       </div>
       <canvas id="donutChart" height="200"></canvas>
       <div class="donut-legend" id="donut-legend"></div>
-      <div class="team-grid" id="team-grid" style="display:none">
+      <div class="team-grid" id="team-grid" style="display:none;grid-template-columns:1fr 1fr">
         <div class="team-card blue">
           <div class="team-card-label">🔵 청팀</div>
           <div class="team-card-pct" id="team-blue-pct" style="color:#4d9fff">0%</div>
@@ -285,6 +285,12 @@ tbody td:nth-child(2){text-align:center}
           <div class="team-card-pct" id="team-white-pct" style="color:#c8ccd8">0%</div>
           <div class="team-bar-wrap"><div class="team-bar-fill white" id="team-white-bar" style="width:0%"></div></div>
           <div class="team-card-sub" id="team-white-sub">₩0 · 0종목</div>
+        </div>
+        <div class="team-card" style="background:rgba(255,209,102,.08);border:1px solid rgba(255,209,102,.2)">
+          <div class="team-card-label" style="color:#ffd166">💰 현금</div>
+          <div class="team-card-pct" id="team-cash-pct" style="color:#ffd166">0%</div>
+          <div class="team-bar-wrap"><div class="team-bar-fill" id="team-cash-bar" style="width:0%;background:#ffd166"></div></div>
+          <div class="team-card-sub" id="team-cash-sub">₩0</div>
         </div>
       </div>
     </div>
@@ -344,10 +350,10 @@ function initCharts() {
 }
 
 // ── FORMAT ────────────────────────────────────────
-function fmt(n, cur='KRW') {
+function fmt(n, cur='USD') {
   if (isNaN(n) || n === null) return '-';
-  if (cur==='USD') return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  return '₩'+Math.round(n).toLocaleString('ko-KR');
+  if (cur==='KRW') return '₩'+Math.round(n).toLocaleString('ko-KR');
+  return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 // ── SHEET CONNECTION ──────────────────────────────
@@ -443,8 +449,8 @@ function parseJSON(rows) {
     holdings.push({
       ticker,
       name:     kName     ? String(row[kName])     : ticker,
-      type:     kType     ? String(row[kType])      : '주식',
-      team:     kTeam     ? String(row[kTeam])      : '',
+      type:     kType     ? String(row[kType]).trim() : '주식',
+      team:     kTeam     ? String(row[kTeam]).trim() : '',
       currency: kCurrency ? String(row[kCurrency])  : 'KRW',
       buy, qty, current,
       dividend: kDividend ? parseFloat(row[kDividend]) || 0 : 0,
@@ -453,6 +459,7 @@ function parseJSON(rows) {
     });
   });
 
+  console.log('holdings:', JSON.stringify(holdings.map(h=>({ticker:h.ticker,type:h.type,current:h.current,qty:h.qty}))));
   if (holdings.length === 0) {
     setAlert('warn', '⚠ 종목 데이터가 없습니다.');
   }
@@ -594,12 +601,15 @@ function updateCharts(totalValue) {
   } else {
     document.getElementById('donut-legend').style.display = 'none';
     document.getElementById('team-grid').style.display = 'grid';
-    const blueVal  = holdings.filter(h=>h.team==='청팀').reduce((s,h)=>s+h.current*h.qty,0);
-    const whiteVal = holdings.filter(h=>h.team==='백팀').reduce((s,h)=>s+h.current*h.qty,0);
-    const noneVal  = totalValue - blueVal - whiteVal;
+    document.getElementById('team-grid').style.gridTemplateColumns = '1fr 1fr';
+    const blueVal  = holdings.filter(h=>h.team==='청팀' && h.type!=='현금').reduce((s,h)=>s+h.current*h.qty,0);
+    const whiteVal = holdings.filter(h=>h.team==='백팀' && h.type!=='현금').reduce((s,h)=>s+h.current*h.qty,0);
+    const cashVal  = holdings.filter(h=>h.type==='현금').reduce((s,h)=>s+h.current*h.qty,0);
+    const noneVal  = totalValue - blueVal - whiteVal - cashVal;
     const tL=[],tD=[],tC=[];
-    if (blueVal>0)  { tL.push('청팀'); tD.push(totalValue>0?blueVal/totalValue*100:0);  tC.push('#4d9fff'); }
-    if (whiteVal>0) { tL.push('백팀'); tD.push(totalValue>0?whiteVal/totalValue*100:0); tC.push('#c8ccd8'); }
+    if (blueVal>0)  { tL.push('청팀');  tD.push(totalValue>0?blueVal/totalValue*100:0);  tC.push('#4d9fff'); }
+    if (whiteVal>0) { tL.push('백팀');  tD.push(totalValue>0?whiteVal/totalValue*100:0); tC.push('#c8ccd8'); }
+    if (cashVal>0)  { tL.push('현금');  tD.push(totalValue>0?cashVal/totalValue*100:0);  tC.push('#ffd166'); }
     if (noneVal>0)  { tL.push('미지정'); tD.push(totalValue>0?noneVal/totalValue*100:0); tC.push('#2a2f3d'); }
     donutChart.data.labels = tL;
     donutChart.data.datasets[0].data = tD;
@@ -607,12 +617,16 @@ function updateCharts(totalValue) {
     donutChart.update('active');
     const bp = totalValue>0?blueVal/totalValue*100:0;
     const wp = totalValue>0?whiteVal/totalValue*100:0;
+    const cp = totalValue>0?cashVal/totalValue*100:0;
     document.getElementById('team-blue-pct').textContent  = bp.toFixed(1)+'%';
     document.getElementById('team-blue-bar').style.width  = bp+'%';
-    document.getElementById('team-blue-sub').textContent  = fmt(blueVal)+' · '+holdings.filter(h=>h.team==='청팀').length+'종목';
+    document.getElementById('team-blue-sub').textContent  = fmt(blueVal)+' · '+holdings.filter(h=>h.team==='청팀'&&h.type!=='현금').length+'종목';
     document.getElementById('team-white-pct').textContent = wp.toFixed(1)+'%';
     document.getElementById('team-white-bar').style.width = wp+'%';
-    document.getElementById('team-white-sub').textContent = fmt(whiteVal)+' · '+holdings.filter(h=>h.team==='백팀').length+'종목';
+    document.getElementById('team-white-sub').textContent = fmt(whiteVal)+' · '+holdings.filter(h=>h.team==='백팀'&&h.type!=='현금').length+'종목';
+    document.getElementById('team-cash-pct').textContent  = cp.toFixed(1)+'%';
+    document.getElementById('team-cash-bar').style.width  = cp+'%';
+    document.getElementById('team-cash-sub').textContent  = fmt(cashVal);
   }
 }
 
