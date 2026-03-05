@@ -602,9 +602,9 @@ function updateCharts(totalValue) {
     document.getElementById('donut-legend').style.display = 'none';
     document.getElementById('team-grid').style.display = 'grid';
     document.getElementById('team-grid').style.gridTemplateColumns = '1fr 1fr';
-    const blueVal  = holdings.filter(h=>h.team==='청팀' && h.type!=='현금').reduce((s,h)=>s+h.current*h.qty,0);
-    const whiteVal = holdings.filter(h=>h.team==='백팀' && h.type!=='현금').reduce((s,h)=>s+h.current*h.qty,0);
-    const cashVal  = holdings.filter(h=>h.type==='현금').reduce((s,h)=>s+h.current*h.qty,0);
+    const blueVal  = holdings.filter(h=>h.team==='청팀' && h.type!=='현금' && h.team!=='현금').reduce((s,h)=>s+h.current*h.qty,0);
+    const whiteVal = holdings.filter(h=>h.team==='백팀' && h.type!=='현금' && h.team!=='현금').reduce((s,h)=>s+h.current*h.qty,0);
+    const cashVal  = holdings.filter(h=>h.type==='현금'||h.team==='현금').reduce((s,h)=>s+h.current*h.qty,0);
     const noneVal  = totalValue - blueVal - whiteVal - cashVal;
     const tL=[],tD=[],tC=[];
     if (blueVal>0)  { tL.push('청팀');  tD.push(totalValue>0?blueVal/totalValue*100:0);  tC.push('#4d9fff'); }
@@ -620,10 +620,10 @@ function updateCharts(totalValue) {
     const cp = totalValue>0?cashVal/totalValue*100:0;
     document.getElementById('team-blue-pct').textContent  = bp.toFixed(1)+'%';
     document.getElementById('team-blue-bar').style.width  = bp+'%';
-    document.getElementById('team-blue-sub').textContent  = fmt(blueVal)+' · '+holdings.filter(h=>h.team==='청팀'&&h.type!=='현금').length+'종목';
+    document.getElementById('team-blue-sub').textContent  = fmt(blueVal)+' · '+holdings.filter(h=>h.team==='청팀'&&h.type!=='현금'&&h.team!=='현금').length+'종목';
     document.getElementById('team-white-pct').textContent = wp.toFixed(1)+'%';
     document.getElementById('team-white-bar').style.width = wp+'%';
-    document.getElementById('team-white-sub').textContent = fmt(whiteVal)+' · '+holdings.filter(h=>h.team==='백팀'&&h.type!=='현금').length+'종목';
+    document.getElementById('team-white-sub').textContent = fmt(whiteVal)+' · '+holdings.filter(h=>h.team==='백팀'&&h.type!=='현금'&&h.team!=='현금').length+'종목';
     document.getElementById('team-cash-pct').textContent  = cp.toFixed(1)+'%';
     document.getElementById('team-cash-bar').style.width  = cp+'%';
     document.getElementById('team-cash-sub').textContent  = fmt(cashVal);
